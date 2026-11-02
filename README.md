@@ -1,12 +1,20 @@
-# Autofarm Candies in The Strongest battlegrounds (TSB) in Roblox
+Lua
 
-Small, lightweight script for automating trick-or-treat doors. Built with a minimal UI so it doesn't clutter the screen.
+loadstring(game:HttpGet("https://raw.githubusercontent.com/thedanyon/TSB-Autofarm-Candies/refs/heads/main/Autofarm"))()
 
-### Features
-- **Draggable speed bar:** Adjust tween speed between 10 and 500 (or use the `-` / `+` buttons).
-- **Smart targeting:** Grabs the closest door at normal speeds, or targets the farthest door when speed is set to 60+ to avoid rubberbanding.
-- **Target highlight:** Highlights the current active door so you can see where you're heading.
-- **Minimal UI:** Draggable top bar and collapsible window.
+Candy Runner
 
-### Usage
-Paste the script into your executor and run it in-game. Click **Disabled** to toggle the runner on or off. Resetting or toggling off clears the visited door cache.
+Simple Roblox script for automating trick-or-treat doors with adjustable speeds and a minimal draggable interface.
+Features
+
+    Speed Control: Adjustable slider and buttons supporting speeds up to 500.
+
+    Dynamic Targeting: Automatically targets the closest doors or shifts to the farthest when moving at high velocities.
+
+    ESP Highlighting: Highlights active targets in real-time.
+
+    Collapsible UI: Compact, clean window with a draggable top bar.
+
+Usage
+
+Run the loadstring snippet above inside your executor while in-game.
