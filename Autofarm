@@ -1,0 +1,400 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+local active = false
+local moveSpeed = 40
+local minSpeed = 10
+local maxSpeed = 500
+local interactOffset = 4
+local doorDelay = 0.6
+local cycleDelay = 1.0
+local visited = {}
+local runnerThread = nil
+
+local palette = {
+    bg = Color3.fromRGB(16, 16, 20),
+    panel = Color3.fromRGB(26, 26, 32),
+    fill = Color3.fromRGB(40, 40, 50),
+    stroke = Color3.fromRGB(48, 48, 58),
+    text = Color3.fromRGB(240, 240, 245),
+    subtext = Color3.fromRGB(150, 150, 165),
+    accent = Color3.fromRGB(255, 115, 25),
+    on = Color3.fromRGB(40, 180, 95),
+    off = Color3.fromRGB(215, 65, 65)
+}
+
+local function resolveContainer()
+    local ok1, hui = pcall(function() return gethui and gethui() end)
+    if ok1 and hui then return hui end
+    local ok2, core = pcall(function() return game:GetService("CoreGui") end)
+    if ok2 and core then return core end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local container = resolveContainer()
+local existing = container:FindFirstChild("LiteRunnerGui")
+if existing then existing:Destroy() end
+
+local sg = Instance.new("ScreenGui")
+sg.Name = "LiteRunnerGui"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = container
+
+local function round(inst, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius)
+    c.Parent = inst
+end
+
+local function outline(inst, col, trans)
+    local s = Instance.new("UIStroke")
+    s.Color = col
+    s.Thickness = 1.2
+    s.Transparency = trans or 0
+    s.Parent = inst
+    return s
+end
+
+local root = Instance.new("Frame")
+root.Name = "Root"
+root.Size = UDim2.new(0, 210, 0, 108)
+root.Position = UDim2.new(0.5, -105, 0.06, 0)
+root.BackgroundColor3 = palette.bg
+root.BorderSizePixel = 0
+root.Active = true
+root.Parent = sg
+round(root, 8)
+outline(root, palette.stroke, 0.2)
+
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 28)
+topBar.BackgroundTransparency = 1
+topBar.Parent = root
+
+local headerText = Instance.new("TextLabel")
+headerText.Size = UDim2.new(1, -36, 1, 0)
+headerText.Position = UDim2.new(0, 10, 0, 0)
+headerText.BackgroundTransparency = 1
+headerText.Text = "Candy Runner"
+headerText.TextColor3 = palette.text
+headerText.Font = Enum.Font.GothamBold
+headerText.TextSize = 12
+headerText.TextXAlignment = Enum.TextXAlignment.Left
+headerText.Parent = topBar
+
+local collapseBtn = Instance.new("TextButton")
+collapseBtn.Size = UDim2.new(0, 20, 0, 20)
+collapseBtn.Position = UDim2.new(1, -24, 0, 4)
+collapseBtn.BackgroundColor3 = palette.panel
+collapseBtn.TextColor3 = palette.subtext
+collapseBtn.Font = Enum.Font.GothamBold
+collapseBtn.TextSize = 12
+collapseBtn.Text = "_"
+collapseBtn.Parent = topBar
+round(collapseBtn, 5)
+
+local content = Instance.new("Frame")
+content.Size = UDim2.new(1, -16, 1, -32)
+content.Position = UDim2.new(0, 8, 0, 28)
+content.BackgroundTransparency = 1
+content.Parent = root
+
+local stateLabel = Instance.new("TextLabel")
+stateLabel.Size = UDim2.new(1, 0, 0, 16)
+stateLabel.Position = UDim2.new(0, 2, 0, 0)
+stateLabel.BackgroundTransparency = 1
+stateLabel.Text = "Idle"
+stateLabel.TextColor3 = palette.subtext
+stateLabel.Font = Enum.Font.GothamMedium
+stateLabel.TextSize = 11
+stateLabel.TextXAlignment = Enum.TextXAlignment.Left
+stateLabel.Parent = content
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, 0, 0, 26)
+toggleBtn.Position = UDim2.new(0, 0, 0, 20)
+toggleBtn.BackgroundColor3 = palette.panel
+toggleBtn.TextColor3 = palette.text
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 11
+toggleBtn.Text = "Disabled"
+toggleBtn.Parent = content
+round(toggleBtn, 6)
+local toggleStroke = outline(toggleBtn, palette.off, 0.3)
+
+local speedBar = Instance.new("Frame")
+speedBar.Size = UDim2.new(1, 0, 0, 22)
+speedBar.Position = UDim2.new(0, 0, 0, 52)
+speedBar.BackgroundColor3 = palette.panel
+speedBar.ClipsDescendants = true
+speedBar.Parent = content
+round(speedBar, 6)
+
+local speedFill = Instance.new("Frame")
+speedFill.Size = UDim2.new((moveSpeed - minSpeed) / (maxSpeed - minSpeed), 0, 1, 0)
+speedFill.BackgroundColor3 = palette.fill
+speedFill.BorderSizePixel = 0
+speedFill.Parent = speedBar
+round(speedFill, 6)
+
+local decBtn = Instance.new("TextButton")
+decBtn.Size = UDim2.new(0, 26, 1, 0)
+decBtn.BackgroundTransparency = 1
+decBtn.Text = "-"
+decBtn.TextColor3 = palette.text
+decBtn.Font = Enum.Font.GothamBold
+decBtn.TextSize = 13
+decBtn.ZIndex = 2
+decBtn.Parent = speedBar
+
+local speedReadout = Instance.new("TextLabel")
+speedReadout.Size = UDim2.new(1, -52, 1, 0)
+speedReadout.Position = UDim2.new(0, 26, 0, 0)
+speedReadout.BackgroundTransparency = 1
+speedReadout.Text = "Speed: " .. moveSpeed
+speedReadout.TextColor3 = palette.text
+speedReadout.Font = Enum.Font.GothamMedium
+speedReadout.TextSize = 11
+speedReadout.ZIndex = 2
+speedReadout.Parent = speedBar
+
+local incBtn = Instance.new("TextButton")
+incBtn.Size = UDim2.new(0, 26, 1, 0)
+incBtn.Position = UDim2.new(1, -26, 0, 0)
+incBtn.BackgroundTransparency = 1
+incBtn.Text = "+"
+incBtn.TextColor3 = palette.text
+incBtn.Font = Enum.Font.GothamBold
+incBtn.TextSize = 13
+incBtn.ZIndex = 2
+incBtn.Parent = speedBar
+
+do
+    local dragging = false
+    local dragOrigin
+    local frameOrigin
+
+    topBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragOrigin = input.Position
+            frameOrigin = root.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragOrigin
+            root.Position = UDim2.new(
+                frameOrigin.X.Scale,
+                frameOrigin.X.Offset + delta.X,
+                frameOrigin.Y.Scale,
+                frameOrigin.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+local collapsed = false
+collapseBtn.MouseButton1Click:Connect(function()
+    collapsed = not collapsed
+    content.Visible = not collapsed
+    root.Size = collapsed and UDim2.new(0, 210, 0, 28) or UDim2.new(0, 210, 0, 108)
+    collapseBtn.Text = collapsed and "+" or "_"
+end)
+
+local function setSpeed(val)
+    moveSpeed = math.clamp(math.floor(val), minSpeed, maxSpeed)
+    speedReadout.Text = "Speed: " .. moveSpeed
+    local ratio = (moveSpeed - minSpeed) / (maxSpeed - minSpeed)
+    speedFill.Size = UDim2.new(ratio, 0, 1, 0)
+end
+
+decBtn.MouseButton1Click:Connect(function()
+    setSpeed(moveSpeed - 10)
+end)
+
+incBtn.MouseButton1Click:Connect(function()
+    setSpeed(moveSpeed + 10)
+end)
+
+do
+    local sliding = false
+    local function updateFromInput(input)
+        local relX = math.clamp((input.Position.X - speedBar.AbsolutePosition.X) / speedBar.AbsoluteSize.X, 0, 1)
+        setSpeed(minSpeed + relX * (maxSpeed - minSpeed))
+    end
+
+    speedReadout.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliding = true
+            updateFromInput(input)
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    sliding = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateFromInput(input)
+        end
+    end)
+end
+
+local function markTarget(part)
+    if not part:FindFirstChild("TargetESP") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "TargetESP"
+        hl.FillColor = palette.accent
+        hl.FillTransparency = 0.45
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.Adornee = part
+        hl.Parent = part
+    end
+end
+
+local function removeMarks()
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("Highlight") and v.Name == "TargetESP" then
+            v:Destroy()
+        end
+    end
+end
+
+local function glideTo(goalCFrame)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+    if not hrp or not hum then return end
+
+    local dist = (hrp.Position - goalCFrame.Position).Magnitude
+    local tween = TweenService:Create(hrp, TweenInfo.new(dist / moveSpeed, Enum.EasingStyle.Linear), {CFrame = goalCFrame})
+
+    local lockConn = RunService.Heartbeat:Connect(function()
+        if char and hrp and hum then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            hum.PlatformStand = false
+            local st = hum:GetState()
+            if st == Enum.HumanoidStateType.Ragdoll or st == Enum.HumanoidStateType.Physics then
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end
+    end)
+
+    tween:Play()
+    tween.Completed:Wait()
+
+    if lockConn then
+        lockConn:Disconnect()
+    end
+end
+
+local function locateDoor()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil, nil end
+
+    local bestPart, bestPrompt
+    local farMode = moveSpeed >= 60
+    local bestDist = farMode and -math.huge or math.huge
+
+    for _, item in ipairs(workspace:GetDescendants()) do
+        if item:IsA("ProximityPrompt") and item.Parent then
+            local valid = item.ObjectText:lower():match("trick")
+                or item.ActionText:lower():match("treat")
+                or item.Parent.Name:lower():match("halloween")
+
+            if valid and not visited[item.Parent] then
+                local part = item.Parent:IsA("BasePart") and item.Parent or item.Parent:FindFirstChildWhichIsA("BasePart")
+                if part then
+                    local d = (hrp.Position - part.Position).Magnitude
+                    if (farMode and d > bestDist) or (not farMode and d < bestDist) then
+                        bestDist = d
+                        bestPart = part
+                        bestPrompt = item
+                    end
+                end
+            end
+        end
+    end
+
+    return bestPart, bestPrompt
+end
+
+local function beginLoop()
+    if runnerThread then task.cancel(runnerThread) end
+    runnerThread = task.spawn(function()
+        stateLabel.Text = "Scanning..."
+        stateLabel.TextColor3 = palette.on
+
+        while active do
+            task.wait(0.05)
+            local part, prompt = locateDoor()
+
+            if part and prompt then
+                markTarget(part)
+                stateLabel.Text = "Moving: " .. part.Name
+                glideTo(part.CFrame * CFrame.new(0, 0, interactOffset))
+
+                stateLabel.Text = "At door..."
+                task.wait(doorDelay)
+
+                if fireproximityprompt then
+                    fireproximityprompt(prompt)
+                else
+                    prompt:InputHoldBegin()
+                    task.wait(prompt.HoldDuration + 0.05)
+                    prompt:InputHoldEnd()
+                end
+
+                visited[part] = true
+                stateLabel.Text = "Waiting..."
+                task.wait(cycleDelay)
+            else
+                stateLabel.Text = "No doors available"
+            end
+        end
+
+        stateLabel.Text = "Idle"
+        stateLabel.TextColor3 = palette.subtext
+    end)
+end
+
+local function haltLoop()
+    active = false
+    if runnerThread then
+        task.cancel(runnerThread)
+        runnerThread = nil
+    end
+    removeMarks()
+    stateLabel.Text = "Idle"
+    stateLabel.TextColor3 = palette.subtext
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+    active = not active
+    toggleBtn.Text = active and "Running" or "Disabled"
+    toggleStroke.Color = active and palette.on or palette.off
+
+    if active then
+        visited = {}
+        beginLoop()
+    else
+        haltLoop()
+    end
+end)
+
+print("Candy Runner initialized.")
